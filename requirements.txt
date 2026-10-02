@@ -1,9 +1,5 @@
-# 运行环境（开发环境：Python 3.12.6 + CUDA 12.4）
-# 安装：pip install -r requirements.txt
-torch>=2.4.1          # 开发用 2.4.1+cu124；CPU 版也可运行，把 config.DEVICE 改成 "cpu"
-numpy>=1.26           # 开发用 2.1.1
-tqdm>=4.66            # 开发用 4.67.1
-
-# ---- 条件嵌入相关（预计算的 protein_esm.pkl 已提供，通常不需要装）----
-# transformers>=4.40  # 若要从头提取 ESM2-650M 嵌入
-# fair-esm>=2.0.0
+python==3.12.6
+cuda==12.4
+torch>=2.4.1
+numpy>=1.26
+tqdm>=4.66

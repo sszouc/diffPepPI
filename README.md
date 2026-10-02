@@ -87,7 +87,6 @@ model.py        TimeEmbedding / ConditionalDecoder / LengthPredictor
 train.py        训练主循环（长度分支与去噪分支独立更新）
 evaluate.py     批量生成与指标（KL / 多样性 / 完全匹配率 / 长度分布）
 generate.py     单条生成示例
-analysis/       分析脚本
 ```
 
 ## 4. 环境与运行
@@ -98,7 +97,6 @@ pip install -r requirements.txt
 python train.py                       # 训练，每轮权重存到 checkpoints/
 python generate.py                    # 用训练好的权重生成示例
 python evaluate.py --split val        # 在训练时未见过的蛋白上评估生成指标
-python analysis/loss_vs_mask_rate.py  # 画出损失随掩码率的曲线
 ```
 
 超参数都在 `config.py`：`T_STEPS=100`、`D_MODEL=256`、`NUM_LAYERS=4`、`NHEAD=8`、
@@ -126,7 +124,7 @@ python analysis/loss_vs_mask_rate.py  # 画出损失随掩码率的曲线
 - **用掩码扩散而不是自回归**：去噪时每个位置能同时看到整条序列，
   一次前向就给所有位置打分，不需要一个残基一个残基地生成。
 - **用吸收态（只掩码到 `<MASK>`）**：D3PM 的完整转移矩阵要学 24×24 个转移概率，
-  而吸收态的反向后验有闭式解 `1 - p_{t-1}/p_t`，训练更稳、实现也更简单。
+  而吸收态的反向后验有闭式解 `1 - p_{t-1}/p_t`，实现更简单。
 - **扩散步数取 T = 100**：每一步平均只解开约 `L/T` 比例的位置。
   T 取 500 时（肽长 L≈19）每步只解开约 4%，500 步里绝大多数在空转；
   降到 100 后采样速度提升 5 倍，生成质量不变。
