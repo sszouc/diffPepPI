@@ -1,0 +1,18 @@
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+__pycache__/
+*.pyc
+
+# 权重：只保留最终权重（100 个 epoch 的中间权重共约 2.7 GB）
+checkpoints/*
+!checkpoints/model_epoch_100.pt
+
+# 生成结果缓存（可由 evaluate.py 重新生成）
+generated_peptides*.pkl
+cache_*.pkl
+
+protein_esm.pkl
