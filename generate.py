@@ -29,7 +29,7 @@ def main() -> None:
         "--checkpoint",
         type=str,
         default="checkpoints/model_best.pt",
-        help="训练权重。旧槽位结构（MEMORY_LENGTH=16）的权重与新结构不兼容，必须先重新训练",
+        help="训练权重。",
     )
     parser.add_argument(
         "--protein_seq",
