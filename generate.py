@@ -27,16 +27,20 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--checkpoint",
-                        type=str,
-                        default="checkpoints/model_epoch_100.pt")
+        type=str,
+        default="checkpoints/model_best.pt",
+        help="训练权重。旧槽位结构（MEMORY_LENGTH=16）的权重与新结构不兼容，必须先重新训练",
+    )
     parser.add_argument(
         "--protein_seq",
-                        type=str,
-                        default="MADFEDRVSDEEKVRIAAKFITHAPPGEFNEVFNDVRLLLNNDNLLREGAAHAFAQYNMDQFTPVKIEGYDDQVLITEHGDLGNGRFLDPRNKISFKFDHLRKEASDPQPEDTESALKQWRDACDSALRAYVKDHYPNGFCTVYGKSIDGQQTIIACIESHQFQPKNFWNGRWRSEWKFTITPPTAQVAAVLKIQVHYYEDGNVQLVSHKDIQDSVQVSSDVQTAKEFIKIIENAENEYQTAISENYQTMSDTTFKALRRQLPVTRTKIDWNKILSYKIGKEMQNA")
+        type=str,
+        default="MADFEDRVSDEEKVRIAAKFITHAPPGEFNEVFNDVRLLLNNDNLLREGAAHAFAQYNMDQFTPVKIEGYDDQVLITEHGDLGNGRFLDPRNKISFKFDHLRKEASDPQPEDTESALKQWRDACDSALRAYVKDHYPNGFCTVYGKSIDGQQTIIACIESHQFQPKNFWNGRWRSEWKFTITPPTAQVAAVLKIQVHYYEDGNVQLVSHKDIQDSVQVSSDVQTAKEFIKIIENAENEYQTAISENYQTMSDTTFKALRRQLPVTRTKIDWNKILSYKIGKEMQNA")
     parser.add_argument(
         "--num_samples",
-                        type=int,
-                        default=5)
+        type=int,
+        default=5,
+        help="生成条数（长度从预测分布采样，每条长度可能不同）",
+    )
     args = parser.parse_args()
 
     embedding = load_embedding_from_pkl(args.protein_seq, EMBEDDING_PATH)
@@ -48,7 +52,7 @@ def main() -> None:
 
     model = ConditionalDecoder().to(DEVICE)
     length_predictor = LengthPredictor().to(DEVICE)
-    ckpt = torch.load(args.checkpoint, map_location=DEVICE)
+    ckpt = torch.load(args.checkpoint, map_location=DEVICE, weights_only=True)
     model.load_state_dict(ckpt["decoder"])
     length_predictor.load_state_dict(ckpt["length_predictor"])
     model.eval()

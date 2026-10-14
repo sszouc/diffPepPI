@@ -12,14 +12,31 @@ def q_sample(
     pad_idx: int = PAD_IDX,
     mask_idx: int = MASK_IDX,
     x_idx: int = X_IDX,
+    eos_idx: int = EOS_IDX,
     T: int = T_STEPS,
-) -> torch.Tensor:
-    p_mask = mask_schedule(t, T).unsqueeze(1)
-    rand = torch.rand_like(x0.float())
+    rand: torch.Tensor | None = None,
+    return_mask: bool = False,
+):
+    """前向加噪：每个位置独立以 p_t = t/(T-1) 的概率变成 <MASK>。
 
-    mask = (rand < p_mask) & (x0 != pad_idx) & (x0 != x_idx)
+    <PAD>、<X>、<EOS> 三类**永不参与加噪**：
+      - <PAD> 只是补齐用的占位符
+      - <X> 是数据里的未知氨基酸，作为上下文保留
+      - <EOS> 的位置由长度分支决定，采样时概率被置 0，不需要它参与去噪
+                （而且不遮蔽可以避免"从输入直接读到长度"的信息泄漏）
+
+    return_mask=True 时返回 (x_t, mask)，mask 为被替换成 <MASK> 的位置。
+    """
+    p_mask = mask_schedule(t, T).unsqueeze(1)
+
+    if rand is None:
+        rand = torch.rand_like(x0.float())
+
+    mask = (rand < p_mask) & (x0 != pad_idx) & (x0 != x_idx) & (x0 != eos_idx)
     x_t = x0.clone()
     x_t[mask] = mask_idx
+    if return_mask:
+        return x_t, mask
     return x_t
 
 def p_sample_loop(

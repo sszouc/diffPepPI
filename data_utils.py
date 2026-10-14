@@ -59,6 +59,7 @@ def parse_fasta_pairs(fasta_path: str, only_positive: bool = False) -> List[Tupl
     return pairs
 
 def encode_peptide(seq: str, length: int = PEPTIDE_LENGTH) -> Tuple[List[int], int]:
+    #PEPTIDE_LENGTH是肽的长度上限，51的原因是最长的肽是50个氨基酸，加上一个终止Token <EOS>
     seq = seq.strip().upper()
     true_length = min(len(seq), length - 1)
     indices = []
@@ -109,9 +110,9 @@ class PeptideDataset(Dataset):
             embedding = embed_dict[protein_seq]
             indices, true_length = encode_peptide(peptide_seq)
             self.samples.append((embedding, indices, true_length))
+            # embedding是蛋白质的1280维向量，indices是肽的数字化，true_length是肽的真实长度
 
         if missing > 0:
-
             print(f"Warning: {missing} proteins missing embeddings; skipped.")
 
     def __len__(self) -> int:

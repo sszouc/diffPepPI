@@ -17,7 +17,7 @@ from config import (
     ONLY_POSITIVE,
     BATCH_SIZE,
 )
-from data_utils import parse_fasta_pairs, decode_peptide, get_dataloaders
+from data_utils import parse_fasta_pairs, decode_peptide, get_dataloaders, set_seed
 from diffusion import p_sample_loop
 from model import ConditionalDecoder, LengthPredictor
 
@@ -149,10 +149,15 @@ def main() -> None:
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default="checkpoints/model_epoch_100.pt",
-        help="Path to model checkpoint",
+        default="checkpoints/model_best.pt",
+        help="训练权重。旧槽位结构（MEMORY_LENGTH=16）的权重与新结构不兼容，必须先重新训练",
     )
-    parser.add_argument("--num_samples", type=int, default=5)
+    parser.add_argument(
+        "--num_samples",
+        type=int,
+        default=5,
+        help="每个蛋白生成多少条候选肽（长度从预测分布采样）",
+    )
     parser.add_argument(
         "--batch_size",
         type=int,
@@ -182,6 +187,12 @@ def main() -> None:
         default="all",
         choices=["all", "val"],
         help="all = 全部蛋白（含训练蛋白）；val = 只看训练时没见过的蛋白",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="采样随机种子。换种子可以量出指标本身的采样噪声，用于判断两次评估的差异是否真实。",
     )
     parser.add_argument(
         "--dry_run",
@@ -252,6 +263,10 @@ def main() -> None:
         ckpt = torch.load(args.checkpoint, map_location=DEVICE, weights_only=True)
         model.load_state_dict(ckpt["decoder"])
         length_predictor.load_state_dict(ckpt["length_predictor"])
+        # 采样是随机的：在这里设种子。注意必须放在数据加载/split 之后——
+        # get_dataloaders() 内部会 set_seed(SEED)，会把之前设的种子覆盖掉。
+        set_seed(args.seed)
+        print(f"[seed={args.seed}] 长度采样与去噪采样使用该随机种子")
         peptides_by_protein = generate_in_batches(
             model,
             length_predictor,
