@@ -10,4 +10,4 @@ __pycache__/
 
 # 生成结果缓存（可由 evaluate.py 重新生成）
 generated_peptides*.pkl
-面试准备_蛋白结合肽生成.md
+prepare.md
