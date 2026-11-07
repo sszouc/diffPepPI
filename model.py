@@ -1,22 +1,24 @@
+"""去噪网络与长度分支。
+
+条件是 `struct_encoder` 预先算好的**变长 memory**（全局 token + 逐残基结构表征）：
+  - 肽的每个位置可以 attend 到蛋白的任意残基（交叉注意力 K/V 长度 = N+1）
+  - 结构编码每个 batch 只做一次，扩散的 100 步复用同一份 memory
+"""
 from __future__ import annotations
 
 import math
+
 import torch
 from torch import nn
 
 from config import (
-    D_MODEL,
-    NUM_LAYERS,
-    NHEAD,
-    DROPOUT,
-    VOCAB_SIZE,
-    OUT_CLASSES,
-    PAD_IDX,
-    PEPTIDE_LENGTH,
-    EMBEDDING_DIM,
+    D_MODEL, NUM_LAYERS, NHEAD, DROPOUT, VOCAB_SIZE, OUT_CLASSES,
+    PAD_IDX, PEPTIDE_LENGTH, EMBEDDING_DIM, FFN_DIM, LEN_HIDDEN,
 )
 
+
 class TimeEmbedding(nn.Module):
+    """正弦时间嵌入 + 两层 MLP。"""
 
     def __init__(self, d_model: int) -> None:
         super().__init__()
@@ -34,70 +36,61 @@ class TimeEmbedding(nn.Module):
         emb = t.float().unsqueeze(1) * emb.unsqueeze(0)
         emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=1)
         if self.d_model % 2 == 1:
-
             emb = torch.cat([emb, torch.zeros_like(emb[:, :1])], dim=1)
         return self.proj(emb)
 
-class ConditionalDecoder(nn.Module):
-    """去噪网络：4 层 TransformerDecoder，条件用标准交叉注意力注入。
 
-    Q 来自肽（51 个位置），K/V 是蛋白条件投影后的单个 memory token。
+class ConditionalDecoder(nn.Module):
+    """4 层 TransformerDecoder，交叉注意力消费结构编码器产出的 memory。
+
+    输入
+      x_t           (B, 51)      加噪后的肽
+      t             (B,)         时间步
+      memory        (B, L, 256)  结构编码器输出（全局 token + 逐残基）
+      memory_mask   (B, L)       布尔，True 表示该 memory 位置是 padding
     """
 
     def __init__(self) -> None:
         super().__init__()
-
         self.token_emb = nn.Embedding(VOCAB_SIZE, D_MODEL, padding_idx=PAD_IDX)
-
         self.pos_emb = nn.Embedding(PEPTIDE_LENGTH, D_MODEL)
         self.time_emb = TimeEmbedding(D_MODEL)
-        self.cond_proj = nn.Linear(EMBEDDING_DIM, D_MODEL)
 
-        decoder_layer = nn.TransformerDecoderLayer(
+        layer = nn.TransformerDecoderLayer(
             d_model=D_MODEL,
             nhead=NHEAD,
+            dim_feedforward=FFN_DIM,
             dropout=DROPOUT,
             batch_first=False,
         )
-        # 单层解码器。包括自注意力，交叉注意力，MLP
-        self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=NUM_LAYERS)
+        self.decoder = nn.TransformerDecoder(layer, num_layers=NUM_LAYERS)
         self.out_proj = nn.Linear(D_MODEL, OUT_CLASSES)
 
-    def forward(self, x_t: torch.Tensor, t: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
+    def forward(self, x_t: torch.Tensor, t: torch.Tensor,
+                memory: torch.Tensor, memory_mask: torch.Tensor | None = None) -> torch.Tensor:
+        B, L = x_t.shape
+        tgt = (self.token_emb(x_t)
+               + self.pos_emb(torch.arange(L, device=x_t.device).unsqueeze(0))
+               + self.time_emb(t).unsqueeze(1)).transpose(0, 1)      # (L,B,D)
 
-        # x_t是时间步t下的肽，cond是蛋白质特征
-        # x_t形状是(B, 51)
-        # t的形状是(B, 1)
-        batch_size, seq_len = x_t.shape
-        # seq_len是51，没有batch
-        tok_emb = self.token_emb(x_t)
-        # 输入肽，线性变换得到一个256维的向量
-        # tok_emb 形状是(B, 51, 256)，给每个位置的氨基酸分配一个256维度的向量
-        pos_ids = torch.arange(seq_len, device=x_t.device).unsqueeze(0)
-        # 生成1到51的等差数列，也就是位置索引。形状是(1,51)，
-        pos_emb = self.pos_emb(pos_ids)
-        # 输入位置索引，线性变换给每个位置一个256维的向量。形状是(1,51，256)
-        time_emb = self.time_emb(t).unsqueeze(1)
-        # 输入此时的时间t，得到一个256维度的向量，形状是(B, 256)，然后还要加一个维度(B, 1 ,256)
-        tgt = tok_emb + pos_emb + time_emb
+        dec_out = self.decoder(
+            tgt=tgt,
+            memory=memory.transpose(0, 1),                           # (L_mem,B,D)
+            tgt_key_padding_mask=x_t.eq(PAD_IDX),
+            memory_key_padding_mask=memory_mask,
+        )
+        return self.out_proj(dec_out.transpose(0, 1))
 
-        tgt = tgt.transpose(0, 1)
-        # tgt (51,batch256)
-
-        cond_proj = self.cond_proj(cond)
-        # 把蛋白质从1280维线性变换成256维向量 (batch,256)
-        memory = cond_proj.unsqueeze(0)
-        # 变成 (1,batch,256)
-        pad_mask = x_t.eq(PAD_IDX)
-        dec_out = self.decoder(tgt=tgt, memory=memory, tgt_key_padding_mask=pad_mask)
-        dec_out = dec_out.transpose(0, 1)
-        logits = self.out_proj(dec_out)
-        #输出(1,batch,21)，这里的21是20种氨基酸加上<EOS>
-        return logits
 
 class LengthPredictor(nn.Module):
+    """从全局 ESM 向量预测肽长分布（51 类）。
 
-    def __init__(self, hidden: int = D_MODEL) -> None:
+    隐层宽度 LEN_HIDDEN=256。曾试过压到 64（省 31.7 万参数）：NLL 基本不变，
+    但采样开始输出越界长度（3415 条里出现 0/35/41/49），故保留 256。
+    这个子问题相对边际基线只能提升约 0.07 nats，也不宜再加大。
+    """
+
+    def __init__(self, hidden: int = LEN_HIDDEN) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(EMBEDDING_DIM, hidden),

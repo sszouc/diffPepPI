@@ -1,10 +1,13 @@
+"""掩码式离散扩散：前向加噪 q_sample 与反向采样 p_sample_loop。"""
 import torch
 import torch.nn.functional as F
 
 from config import PAD_IDX, MASK_IDX, T_STEPS, X_IDX, EOS_IDX
 
+
 def mask_schedule(t: torch.Tensor, T: int = T_STEPS) -> torch.Tensor:
     return t.float() / (T - 1)
+
 
 def q_sample(
     x0: torch.Tensor,
@@ -39,22 +42,29 @@ def q_sample(
         return x_t, mask
     return x_t
 
+
 def p_sample_loop(
     model,
-    cond: torch.Tensor,
+    memory: torch.Tensor,
     L: int,
     length: torch.Tensor,
+    memory_mask: torch.Tensor | None = None,
     T: int = T_STEPS,
     pad_idx: int = PAD_IDX,
     mask_idx: int = MASK_IDX,
     eos_idx: int = EOS_IDX,
     device: torch.device | None = None,
 ) -> torch.Tensor:
+    """反向采样。
+
+    memory 是**预先算好**的结构编码结果（B, L_mem, D）。蛋白条件与时间步无关，
+    整个 100 步复用同一份，所以结构编码器在采样时只需前向一次。
+    """
     if device is None:
-        device = cond.device
+        device = memory.device
 
     model.eval()
-    batch_size = cond.size(0)
+    batch_size = memory.size(0)
 
     length = torch.as_tensor(length, dtype=torch.long, device=device).reshape(-1)
 
@@ -68,7 +78,7 @@ def p_sample_loop(
         for t in range(T - 1, 0, -1):
 
             t_tensor = torch.full((batch_size,), t, device=device, dtype=torch.long)
-            logits = model(x_t, t_tensor, cond)
+            logits = model(x_t, t_tensor, memory, memory_mask)
             probs = F.softmax(logits, dim=-1)
 
             probs = probs.clone()
@@ -95,7 +105,7 @@ def p_sample_loop(
         mask_pos = x_t.eq(mask_idx)
         if mask_pos.any():
             t_tensor = torch.zeros((batch_size,), device=device, dtype=torch.long)
-            logits = model(x_t, t_tensor, cond)
+            logits = model(x_t, t_tensor, memory, memory_mask)
             probs = F.softmax(logits, dim=-1).clone()
             probs[..., eos_idx] = 0.0
             probs = probs / probs.sum(dim=-1, keepdim=True).clamp_min(1e-12)

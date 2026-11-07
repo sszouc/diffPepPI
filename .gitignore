@@ -10,4 +10,17 @@ __pycache__/
 
 # 生成结果缓存（可由 evaluate.py 重新生成）
 generated_peptides*.pkl
-prepare.md
+
+# 验证侧蛋白清单（可由 export_val_proteins.py 重新生成）
+/val_proteins.fasta
+/val_proteins.csv
+/data/propedia26_clean.csv
+/data/structures/
+/data/propedia26_v15.csv
+/data/embeddings.pkl
+
+# 预处理产物（可由 build_align.py / split_pkl.py 重新生成）
+/data/struct_cache/
+/data/residue_emb/
+/data/manifest.pkl
+/data/residue_index.csv

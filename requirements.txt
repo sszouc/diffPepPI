@@ -1,5 +1,5 @@
-python==3.12.6
-cuda==12.4
 torch>=2.4.1
 numpy>=1.26
+pandas>=2.0
+scipy>=1.11
 tqdm>=4.66
